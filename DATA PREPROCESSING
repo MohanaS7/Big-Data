@@ -1,0 +1,100 @@
+from pyspark.sql import functions as F
+from pyspark.sql import SparkSession
+
+df = spark.table("social_media_influencer")
+
+print("✅ Dataset Loaded")
+display(df.limit(5))
+
+df = df.select(
+    F.col("id").cast("bigint"),
+    F.col("platform").cast("string"),
+    F.col("content_id").cast("string"),
+    F.col("creator_id").cast("string"),
+    F.col("creator_name").cast("string"),
+    F.col("content_url").cast("string"),
+    F.col("content_type").cast("string"),
+    F.col("content_category").cast("string"),
+    F.col("post_date").cast("string"),
+    F.col("language").cast("string"),
+    F.col("content_length").cast("bigint"),
+    F.col("content_description").cast("string"),
+    F.col("hashtags").cast("string"),
+    F.col("views").cast("bigint"),
+    F.col("likes").cast("bigint"),
+    F.col("shares").cast("bigint"),
+    F.col("comments_count").cast("bigint"),
+    F.col("comments_text").cast("string"),
+    F.col("follower_count").cast("bigint"),
+    F.col("is_sponsored").cast("boolean")
+)
+
+print("✅ Schema Verified and Casted")
+df.printSchema()
+
+numeric_cols = ["views", "likes", "shares", "comments_count", "content_length", "follower_count"]
+df = df.na.fill(0, subset=numeric_cols)
+
+string_cols = ["platform", "creator_name", "content_type", "content_category", "language"]
+df = df.na.fill("Unknown", subset=string_cols)
+
+df = df.na.fill({"is_sponsored": False})
+
+print("✅ Null Values Handled")
+
+
+before = df.count()
+df = df.dropDuplicates()
+after = df.count()
+print(f"✅ Duplicates Removed: {before - after} duplicates dropped")
+
+df = df.withColumn(
+    "post_date",
+    F.expr("""
+        coalesce(
+            try_to_timestamp(post_date, 'M/d/yy h:mm a'),
+            try_to_timestamp(post_date, 'MM/dd/yyyy HH:mm:ss'),
+            try_to_timestamp(post_date, 'yyyy-MM-dd HH:mm:ss'),
+            try_to_timestamp(post_date, 'yyyy-MM-dd'),
+            try_to_timestamp(post_date, 'dd-MM-yyyy')
+        )
+    """)
+)
+
+
+df = df.withColumn("year", F.year("post_date")) \
+       .withColumn("month", F.month("post_date"))
+
+print("✅ Dates Parsed Successfully")
+display(df.select("post_date", "year", "month").limit(10))
+
+df = df.withColumn("total_engagement", F.col("likes") + F.col("shares") + F.col("comments_count"))
+
+df = df.withColumn(
+    "engagement_rate",
+    F.when(F.col("follower_count") > 0,
+           (F.col("total_engagement") / F.col("follower_count")) * 100)
+     .otherwise(0)
+)
+
+
+df = df.withColumn("hashtag_count", F.size(F.split(F.col("hashtags"), " ")))
+
+
+print("✅ Feature Engineering Completed")
+display(df.select("creator_name", "platform", "total_engagement", "engagement_rate", "hashtag_count").limit(5))
+
+quantiles = df.approxQuantile(["likes", "views", "shares"], [0.99], 0.05)
+likes_cap, views_cap, shares_cap = quantiles[0][0], quantiles[1][0], quantiles[2][0]
+
+df = df.withColumn("likes", F.when(F.col("likes") > likes_cap, likes_cap).otherwise(F.col("likes")))
+df = df.withColumn("views", F.when(F.col("views") > views_cap, views_cap).otherwise(F.col("views")))
+df = df.withColumn("shares", F.when(F.col("shares") > shares_cap, shares_cap).otherwise(F.col("shares")))
+
+print("✅ Outliers Handled")
+
+df.write.mode("overwrite").saveAsTable("social_media_influencer_cleaned")
+print("✅ Preprocessed data saved as table: social_media_influencer_cleaned")
+
+display(df.limit(10))
+
