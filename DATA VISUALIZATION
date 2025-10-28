@@ -1,0 +1,53 @@
+SELECT * FROM workspace.default.social_media_influencer
+
+SELECT 
+    creator_name,
+    platform,
+    SUM(likes + shares + comments_count) AS total_engagement
+FROM social_media_influencer
+GROUP BY creator_name, platform
+ORDER BY total_engagement DESC
+LIMIT 10;
+
+SELECT 
+    platform,
+    AVG(likes) AS avg_likes,
+    AVG(shares) AS avg_shares,
+    AVG(comments_count) AS avg_comments
+FROM social_media_influencer
+GROUP BY platform
+ORDER BY avg_likes DESC;
+
+SELECT 
+    content_category,
+    creator_name,
+    MAX(views) AS max_views
+FROM social_media_influencer
+GROUP BY content_category, creator_name
+ORDER BY max_views DESC;
+
+SELECT 
+    creator_name,
+    ROUND(AVG((likes + shares + comments_count) / follower_count * 100), 2) AS avg_engagement_rate
+FROM social_media_influencer
+WHERE follower_count > 0
+GROUP BY creator_name
+ORDER BY avg_engagement_rate DESC
+LIMIT 10;
+
+SELECT 
+    is_sponsored,
+    ROUND(AVG(views), 2) AS avg_views,
+    ROUND(AVG(likes), 2) AS avg_likes,
+    ROUND(AVG(shares), 2) AS avg_shares,
+    ROUND(AVG(comments_count), 2) AS avg_comments
+FROM social_media_influencer
+GROUP BY is_sponsored;
+
+SELECT 
+    platform,
+    SUBSTRING(post_date, 1, 7) AS month,  -- assuming 'YYYY-MM-DD' format
+    COUNT(content_id) AS total_posts
+FROM social_media_influencer
+GROUP BY platform, SUBSTRING(post_date, 1, 7)
+ORDER BY month ASC;
