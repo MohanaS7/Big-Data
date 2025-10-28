@@ -1,0 +1,78 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, sum, avg, round, substring, expr, desc
+
+df = spark.table("social_media_influencer")
+
+display(df.limit(5))
+
+print("Schema:")
+df.printSchema()
+
+print("Row count:", df.count())
+
+display(df.describe(["views", "likes", "shares", "comments_count", "follower_count"]))
+
+df = df.dropDuplicates()
+
+df = df.na.fill({"likes": 0, "shares": 0, "comments_count": 0, "views": 0, "follower_count": 0})
+
+df = df.withColumn("post_date", col("post_date").cast("string"))
+
+top_influencers = (
+    df.groupBy("creator_name", "platform")
+      .agg(sum(col("likes") + col("shares") + col("comments_count")).alias("total_engagement"))
+      .orderBy(desc("total_engagement"))
+      .limit(10)
+)
+display(top_influencers)
+
+avg_platform_engagement = (
+    df.groupBy("platform")
+      .agg(
+          round(avg("likes"), 2).alias("avg_likes"),
+          round(avg("shares"), 2).alias("avg_shares"),
+          round(avg("comments_count"), 2).alias("avg_comments")
+      )
+      .orderBy(desc("avg_likes"))
+)
+display(avg_platform_engagement)
+
+max_viewed_content = (
+    df.groupBy("content_category", "creator_name")
+      .agg(expr("max(views) as max_views"))
+      .orderBy(desc("max_views"))
+)
+display(max_viewed_content)
+
+engagement_rate = (
+    df.filter(col("follower_count") > 0)
+      .groupBy("creator_name")
+      .agg(round(avg((col("likes") + col("shares") + col("comments_count")) / col("follower_count") * 100), 2)
+           .alias("avg_engagement_rate"))
+      .orderBy(desc("avg_engagement_rate"))
+      .limit(10)
+)
+display(engagement_rate)
+
+sponsored_analysis = (
+    df.groupBy("is_sponsored")
+      .agg(
+          round(avg("views"), 2).alias("avg_views"),
+          round(avg("likes"), 2).alias("avg_likes"),
+          round(avg("shares"), 2).alias("avg_shares"),
+          round(avg("comments_count"), 2).alias("avg_comments")
+      )
+)
+display(sponsored_analysis)
+
+monthly_trend = (
+    df.withColumn("month", substring("post_date", 1, 7))
+      .groupBy("platform", "month")
+      .agg(expr("count(content_id) as total_posts"))
+      .orderBy("month")
+)
+display(monthly_trend)
+
+top_influencers.write.mode("overwrite").saveAsTable("top_influencers_summary")
+avg_platform_engagement.write.mode("overwrite").saveAsTable("platform_engagement_summary")
+monthly_trend.write.mode("overwrite").saveAsTable("posting_trend_summary")
