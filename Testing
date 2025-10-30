@@ -1,0 +1,94 @@
+
+from pyspark.ml.feature import StringIndexer, VectorAssembler
+from pyspark.ml.regression import LinearRegression
+from pyspark.ml.evaluation import RegressionEvaluator
+from pyspark.ml import Pipeline
+from pyspark.sql import functions as F
+
+df = spark.table("social_media_influencer_cleaned")
+print("✅ Cleaned data loaded successfully")
+display(df.limit(5))
+
+model_df = df.select(
+    "platform",
+    "content_type",
+    "content_category",
+    "views",
+    "likes",
+    "shares",
+    "comments_count",
+    "follower_count",
+    "hashtag_count",
+    "is_sponsored",
+    "engagement_rate"
+)
+
+model_df = model_df.fillna({
+    "views": 0,
+    "likes": 0,
+    "shares": 0,
+    "comments_count": 0,
+    "follower_count": 0,
+    "hashtag_count": 0,
+    "is_sponsored": 0,
+    "engagement_rate": 0,
+    "platform": "Unknown",
+    "content_type": "Unknown",
+    "content_category": "Unknown"
+})
+
+print(f"✅ Null values safely handled. Row count: {model_df.count()}")
+
+platform_indexer = StringIndexer(inputCol="platform", outputCol="platform_index", handleInvalid="keep")
+type_indexer = StringIndexer(inputCol="content_type", outputCol="content_type_index", handleInvalid="keep")
+category_indexer = StringIndexer(inputCol="content_category", outputCol="content_category_index", handleInvalid="keep")
+
+
+assembler = VectorAssembler(
+    inputCols=[
+        "platform_index",
+        "content_type_index",
+        "content_category_index",
+        "views",
+        "likes",
+        "shares",
+        "comments_count",
+        "follower_count",
+        "hashtag_count",
+        "is_sponsored"
+    ],
+    outputCol="features",
+    handleInvalid="keep"
+)
+
+train_df, test_df = model_df.randomSplit([0.8, 0.2], seed=42)
+print(f"✅ Train size: {train_df.count()}, Test size: {test_df.count()}")
+
+lr = LinearRegression(featuresCol="features", labelCol="engagement_rate", maxIter=50)
+
+pipeline = Pipeline(stages=[platform_indexer, type_indexer, category_indexer, assembler, lr])
+
+lr_model = pipeline.fit(train_df)
+print("✅ Model trained successfully!")
+
+predictions=lr_model.transform(test_df)
+
+evaluator_rmse = RegressionEvaluator(labelCol="engagement_rate", predictionCol="prediction", metricName="rmse")
+evaluator_r2 = RegressionEvaluator(labelCol="engagement_rate", predictionCol="prediction", metricName="r2")
+
+rmse = evaluator_rmse.evaluate(predictions)
+r2 = evaluator_r2.evaluate(predictions)
+
+print(f"📉 RMSE (Root Mean Square Error): {rmse:.4f}")
+print(f"📈 R² (Coefficient of Determination): {r2:.4f}")
+
+display(predictions.select("platform", "engagement_rate", "prediction").limit(10))
+
+lr_stage = lr_model.stages[-1]
+print("✅ Model Coefficients:")
+print(f"Intercept: {lr_stage.intercept}")
+print(f"Coefficients: {lr_stage.coefficients}")
+
+sample = test_df.limit(5)
+predictions = lr_model.transform(sample)
+display(predictions.select("platform", "engagement_rate", "prediction"))
